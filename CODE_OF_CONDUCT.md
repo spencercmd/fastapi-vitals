@@ -1,129 +1,73 @@
-# Contributor Covenant Code of Conduct
+# Code of Conduct
 
-## Our Pledge
+This project is infrastructure. It runs on the request path of other people's
+production services, and the only thing we are here to do is make it correct,
+cheap, and safe to run. This document covers conduct in issues, pull requests,
+reviews, and every other project space.
 
-We as members, contributors, and leaders pledge to make participation in our
-community a harassment-free experience for everyone, regardless of age, body
-size, visible or invisible disability, ethnicity, sex characteristics, gender
-identity and expression, level of experience, education, socio-economic status,
-nationality, personal appearance, race, caste, color, religion, or sexual
-identity and orientation.
+It is short on purpose. Two principles cover nearly everything.
 
-We pledge to act and interact in ways that contribute to an open, welcoming,
-diverse, inclusive, and healthy community.
+## 1. Judge the argument, not the author
 
-## Our Standards
+Technical claims stand or fall on evidence and reasoning. Who is making the
+claim is irrelevant to whether it is true.
 
-Examples of behavior that contributes to a positive environment for our
-community include:
+- Bring evidence. For a library like this one that means benchmarks, profiles,
+  reproductions, scrape output, or a citation to the OpenMetrics or
+  OpenTelemetry spec. An assertion with no support is a starting point for a
+  discussion, not the end of one.
+- Seniority, tenure, employer, and popularity are not arguments. Neither is
+  "this is how we have always done it."
+- Say "I don't know" when you don't. It is far cheaper than a confident guess
+  that someone else has to debug in production six months from now.
+- Update your position when the evidence changes, and do it out loud. Being
+  publicly persuaded is a display of competence, not a loss.
+- Attack the idea as hard as you like. Rigorous review is a service to the
+  person receiving it. Do not attack the person holding the idea.
+- Assume the other party is competent and arguing in good faith until they
+  demonstrate otherwise. Most disagreements here are missing context, not
+  malice.
 
-* Demonstrating empathy and kindness toward other people
-* Being respectful of differing opinions, viewpoints, and experiences
-* Giving and gracefully accepting constructive feedback
-* Accepting responsibility and apologizing to those affected by our mistakes,
-  and learning from the experience
-* Focusing on what is best not just for us as individuals, but for the overall
-  community
+If you are on the receiving end of a hard review, read it for the technical
+content. Directness is not hostility.
 
-Examples of unacceptable behavior include:
+## 2. Identity and politics are off topic
 
-* The use of sexualized language or imagery, and sexual attention or advances of
-  any kind
-* Trolling, insulting or derogatory comments, and personal or political attacks
-* Public or private harassment
-* Publishing others' private information, such as a physical or email address,
-  without their explicit permission
-* Other conduct which could reasonably be considered inappropriate in a
-  professional setting
+We do not need to know anything about you beyond the quality of your reasoning
+and the strength of your character. Contributions are evaluated on the code and
+the argument behind it, and on nothing else.
 
-## Enforcement Responsibilities
+- Keep political, ideological, and religious advocacy out of project spaces.
+- Do not invoke your own identity, or anyone else's, as an argument. It carries
+  no evidentiary weight, for you or against you.
+- Do not speculate about a contributor's identity, background, or motives. If
+  you think a patch is wrong, say why it is wrong.
 
-Community leaders are responsible for clarifying and enforcing our standards of
-acceptable behavior and will take appropriate and fair corrective action in
-response to any behavior that they deem inappropriate, threatening, offensive,
-or harmful.
+To be unambiguous about what this means: it is not that some people are
+unwelcome here. It is that none of these attributes are relevant to the work,
+which means none of them can be grounds for advantage or for exclusion. Show up
+able to think clearly and write good code and you are welcome, and nothing else
+about you will be held for or against you.
 
-Community leaders have the right and responsibility to remove, edit, or reject
-comments, commits, code, wiki edits, issues, and other contributions that are
-not aligned to this Code of Conduct, and will communicate reasons for moderation
-decisions when appropriate.
+## Conduct that gets you removed
 
-## Scope
-
-This Code of Conduct applies within all community spaces, and also applies when
-an individual is officially representing the community in public spaces.
-Examples of representing our community include using an official email address,
-posting via an official social media account, or acting as an appointed
-representative at an online or offline event.
+- Harassment, threats, or sustained personal attacks.
+- Publishing anyone's private information without permission.
+- Arguing in deliberate bad faith: misrepresenting someone's position,
+  manufacturing evidence, or reopening a settled question without new
+  information in order to exhaust the other side.
+- Persistently derailing a thread after being asked to stop.
+- Knowingly contributing malicious code, a compromised dependency, or telemetry
+  that exfiltrates data from a deploying service. Given where this library
+  sits, this is treated as a security incident and not as a conduct dispute.
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at
-spencer@spencercmd.com. All complaints will be reviewed and investigated
-promptly and fairly.
+Maintainers will edit or remove contributions that violate the above, and will
+lock threads or revoke access when it is warranted. The usual first response is
+a direct request to change course; removal is for people who do not.
 
-All community leaders are obligated to respect the privacy and security of the
-reporter of any incident.
-
-## Enforcement Guidelines
-
-Community leaders will follow these Community Impact Guidelines in determining
-the consequences for any action they deem in violation of this Code of Conduct:
-
-### 1. Correction
-
-**Community Impact**: Use of inappropriate language or other behavior deemed
-unprofessional or unwelcome in the community.
-
-**Consequence**: A private, written warning from community leaders, providing
-clarity around the nature of the violation and an explanation of why the
-behavior was inappropriate. A public apology may be requested.
-
-### 2. Warning
-
-**Community Impact**: A violation through a single incident or series of
-actions.
-
-**Consequence**: A warning with consequences for continued behavior. No
-interaction with the people involved, including unsolicited interaction with
-those enforcing the Code of Conduct, for a specified period of time. This
-includes avoiding interactions in community spaces as well as external channels
-like social media. Violating these terms may lead to a temporary or permanent
-ban.
-
-### 3. Temporary Ban
-
-**Community Impact**: A serious violation of community standards, including
-sustained inappropriate behavior.
-
-**Consequence**: A temporary ban from any sort of interaction or public
-communication with the community for a specified period of time. No public or
-private interaction with the people involved, including unsolicited interaction
-with those enforcing the Code of Conduct, is allowed during this period.
-Violating these terms may lead to a permanent ban.
-
-### 4. Permanent Ban
-
-**Community Impact**: Demonstrating a pattern of violation of community
-standards, including sustained inappropriate behavior, harassment of an
-individual, or aggression toward or disparagement of classes of individuals.
-
-**Consequence**: A permanent ban from any sort of public interaction within the
-community.
-
-## Attribution
-
-This Code of Conduct is adapted from the [Contributor Covenant][homepage],
-version 2.1, available at
-https://www.contributor-covenant.org/version/2/1/code_of_conduct.html.
-
-Community Impact Guidelines were inspired by
-[Mozilla's code of conduct enforcement ladder][mozilla].
-
-[homepage]: https://www.contributor-covenant.org
-[mozilla]: https://github.com/mozilla/diversity
-
-For answers to common questions about this code of conduct, see the FAQ at
-https://www.contributor-covenant.org/faq. Translations are available at
-https://www.contributor-covenant.org/translations.
+Report problems to spencer@spencercmd.com. Reports will be handled discreetly
+and the reporter's identity kept confidential. Reasoning for a moderation
+decision will be given where it is practical to do so, and maintainer judgment
+is final.
