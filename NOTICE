@@ -1,0 +1,7 @@
+fastapi-observability
+Copyright 2026 The fastapi-observability authors
+
+This product includes software developed for FastAPI observability
+(OpenTelemetry tracing and Prometheus RED metrics).
+
+Licensed under the Apache License, Version 2.0.
