@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi_observability import _identity as ident
-from fastapi_observability import _resource as r
-from fastapi_observability import metrics as m
-from fastapi_observability import tracing as t
+from fastapi_vitals import _identity as ident
+from fastapi_vitals import _resource as r
+from fastapi_vitals import metrics as m
+from fastapi_vitals import tracing as t
 
 
 def test_identity_defaults_are_single_source():

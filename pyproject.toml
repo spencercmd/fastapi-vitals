@@ -3,13 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "fastapi-observability"
-version = "0.1.0"
+name = "fastapi-vitals"
+dynamic = ["version"]
 description = "OpenTelemetry tracing + Prometheus RED metrics for FastAPI (route templates, OpenMetrics exemplars, dual sync/async observers)."
 readme = "README.md"
-requires-python = ">=3.9"
+# Floor is 3.10 because fastapi>=0.133 and starlette>=1.3 both require it.
+requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
-authors = [{ name = "fastapi-observability contributors" }]
+authors = [{ name = "fastapi-vitals contributors" }]
 keywords = [
     "fastapi",
     "opentelemetry",
@@ -26,11 +27,12 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: System :: Monitoring",
+    "Typing :: Typed",
 ]
 dependencies = [
     # Low floors so consumers can pin their own OTEL stack without forced bumps.
@@ -71,15 +73,35 @@ dev = [
     "pyright>=1.1.390",
 ]
 
+[project.urls]
+Homepage = "https://github.com/spencercmd/fastapi-vitals"
+Repository = "https://github.com/spencercmd/fastapi-vitals"
+Issues = "https://github.com/spencercmd/fastapi-vitals/issues"
+Changelog = "https://github.com/spencercmd/fastapi-vitals/blob/main/CHANGELOG.md"
+
+[tool.hatch.version]
+path = "src/fastapi_vitals/__init__.py"
+
 [tool.hatch.build.targets.wheel]
-packages = ["src/fastapi_observability"]
+packages = ["src/fastapi_vitals"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src",
+    "tests",
+    "scripts",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE",
+]
 
 [tool.pytest.ini_options]
 addopts = "--benchmark-disable"
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 src = ["src", "tests"]
 line-length = 100
 
@@ -104,7 +126,7 @@ max-complexity = 12
 [tool.mypy]
 python_version = "3.10"
 mypy_path = "src"
-packages = ["fastapi_observability"]
+packages = ["fastapi_vitals"]
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -116,7 +138,7 @@ show_error_codes = true
 [tool.pyright]
 include = ["src"]
 exclude = ["**/__pycache__", ".venv"]
-pythonVersion = "3.9"
+pythonVersion = "3.10"
 typeCheckingMode = "basic"
 reportMissingImports = "warning"
 reportMissingTypeStubs = false

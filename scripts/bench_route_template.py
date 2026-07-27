@@ -19,8 +19,8 @@ from typing import Callable, List
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 
-from fastapi_observability.metrics import setup_metrics
-from fastapi_observability.metrics.route_templates import route_template
+from fastapi_vitals.metrics import setup_metrics
+from fastapi_vitals.metrics.route_templates import route_template
 
 
 def _build_app(*, cache_unmatched: bool = False) -> FastAPI:

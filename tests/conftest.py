@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for fastapi-observability tests."""
+"""Shared pytest fixtures for fastapi-vitals tests."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from fastapi_observability._identity import reset_identity_labels
-from fastapi_observability.metrics import _exemplars as metrics_exemplars
-from fastapi_observability.metrics.middleware import reset_metrics_enabled
+from fastapi_vitals._identity import reset_identity_labels
+from fastapi_vitals.metrics import _exemplars as metrics_exemplars
+from fastapi_vitals.metrics.middleware import reset_metrics_enabled
 
 
 @pytest.fixture(autouse=True)

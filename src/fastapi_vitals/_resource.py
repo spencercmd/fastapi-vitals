@@ -1,7 +1,7 @@
 """OTEL resource attribute assembly (service identity, process.runtime).
 
 Optional platform enrichers (e.g. AWS ECS) live under
-``fastapi_observability.adapters`` and are applied only when available —
+``fastapi_vitals.adapters`` and are applied only when available —
 core setup never requires cloud metadata.
 """
 
@@ -65,7 +65,7 @@ def _default_enrichers() -> List[ResourceEnricher]:
     """Lazy-load optional adapters that self-detect their runtime."""
     enrichers: List[ResourceEnricher] = list(_extra_enrichers)
     try:
-        from fastapi_observability.adapters import ecs
+        from fastapi_vitals.adapters import ecs
 
         if ecs.is_available():
             enrichers.append(ecs.enrich)

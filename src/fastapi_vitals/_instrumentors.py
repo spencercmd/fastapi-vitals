@@ -76,7 +76,7 @@ def _load(name: str) -> Optional[_Instrumentor]:
     except (ImportError, AttributeError) as exc:
         logger.warning(
             "OTEL instrumentation %r unavailable (%s); "
-            "install fastapi-observability[%s] (optional extra) to enable",
+            "install fastapi-vitals[%s] (optional extra) to enable",
             name,
             exc,
             name,

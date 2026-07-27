@@ -8,7 +8,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
-from fastapi_observability import metrics as m
+from fastapi_vitals import metrics as m
 from metrics_helpers import _app, _in_flight_value
 
 
@@ -24,7 +24,7 @@ def test_metrics_disabled_by_env(monkeypatch):
 
 def test_metrics_enabled_cache_freezes_until_reset(monkeypatch):
     """METRICS_ENABLED freezes after first read; reset re-evaluates env."""
-    from fastapi_observability.metrics.middleware import reset_metrics_enabled
+    from fastapi_vitals.metrics.middleware import reset_metrics_enabled
 
     monkeypatch.setenv("METRICS_ENABLED", "true")
     assert m.metrics_enabled() is True
@@ -364,7 +364,7 @@ def test_repeated_static_and_template_routes_keep_labels(monkeypatch):
 
 def test_route_template_cache_memoizes_successful_walk(monkeypatch):
     """Successful (path, method) → template is stored; unmatched is not."""
-    from fastapi_observability.metrics.route_templates import RouteTemplateCache
+    from fastapi_vitals.metrics.route_templates import RouteTemplateCache
 
     monkeypatch.setenv("SERVICE", "memo-svc")
     monkeypatch.setenv("METRICS_ENABLED", "true")
@@ -382,7 +382,7 @@ def test_route_template_cache_memoizes_successful_walk(monkeypatch):
 
 def test_negative_cache_memoizes_unmatched_when_opted_in(monkeypatch):
     """cache_unmatched=True stores unmatched after routes are stable."""
-    from fastapi_observability.metrics.route_templates import RouteTemplateCache
+    from fastapi_vitals.metrics.route_templates import RouteTemplateCache
 
     monkeypatch.setenv("SERVICE", "neg-cache-svc")
     monkeypatch.setenv("METRICS_ENABLED", "true")
@@ -454,8 +454,8 @@ def test_method_mismatch_uses_path_template(monkeypatch):
 
 
 def test_public_metrics_api_reexports():
-    """Package split must keep stable ``from fastapi_observability.metrics import …``."""
-    from fastapi_observability.metrics import (
+    """Package split must keep stable ``from fastapi_vitals.metrics import …``."""
+    from fastapi_vitals.metrics import (
         DEPENDENCY_REQUEST_DURATION,
         EXCLUDED_PATHS,
         HTTP_REQUEST_DURATION,

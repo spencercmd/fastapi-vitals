@@ -1,5 +1,5 @@
-fastapi-observability
-Copyright 2026 The fastapi-observability authors
+fastapi-vitals
+Copyright 2026 The fastapi-vitals authors
 
 This product includes software developed for FastAPI observability
 (OpenTelemetry tracing and Prometheus RED metrics).

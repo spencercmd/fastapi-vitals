@@ -11,7 +11,7 @@ from prometheus_client.openmetrics.exposition import (
     generate_latest as generate_latest_openmetrics,
 )
 
-from fastapi_observability import metrics as m
+from fastapi_vitals import metrics as m
 
 
 def _scrape() -> str:

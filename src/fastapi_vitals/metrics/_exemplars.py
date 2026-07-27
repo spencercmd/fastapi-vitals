@@ -7,10 +7,10 @@ from typing import Dict, Optional
 from opentelemetry import trace
 from opentelemetry.trace import Tracer
 
-from fastapi_observability._process_cache import ProcessCache
-from fastapi_observability._trace_ids import format_trace_span_ids
+from fastapi_vitals._process_cache import ProcessCache
+from fastapi_vitals._trace_ids import format_trace_span_ids
 
-_TRACER_NAME = "fastapi_observability.metrics"  # stable OTEL tracer name
+_TRACER_NAME = "fastapi_vitals.metrics"  # stable OTEL tracer name
 _tracer = ProcessCache(lambda: trace.get_tracer(_TRACER_NAME))
 
 

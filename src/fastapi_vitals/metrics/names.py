@@ -8,9 +8,9 @@ Default base names are standard RED-style series (see README). Override via:
 
 2. Explicit configure **before** first instrument access::
 
-       from fastapi_observability.metrics.names import configure_metric_names
+       from fastapi_vitals.metrics.names import configure_metric_names
        configure_metric_names(prefix="myapp")
-       from fastapi_observability.metrics import HTTP_REQUESTS  # uses prefix
+       from fastapi_vitals.metrics import HTTP_REQUESTS  # uses prefix
 
 Once any instrument is constructed, names are locked for the process.
 """

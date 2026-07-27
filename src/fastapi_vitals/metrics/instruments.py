@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from prometheus_client import Counter, Gauge, Histogram
 
-from fastapi_observability.http_exclusions import EXCLUDED_HTTP_PATHS
+from fastapi_vitals.http_exclusions import EXCLUDED_HTTP_PATHS
 
 from .names import resolve as _resolve_name
 

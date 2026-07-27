@@ -13,8 +13,8 @@ import pytest
 from fastapi import FastAPI
 from starlette.requests import Request
 
-from fastapi_observability.metrics import setup_metrics
-from fastapi_observability.metrics.route_templates import route_template
+from fastapi_vitals.metrics import setup_metrics
+from fastapi_vitals.metrics.route_templates import route_template
 
 pytest.importorskip("pytest_benchmark")
 

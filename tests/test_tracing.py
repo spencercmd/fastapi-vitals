@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import FastAPI
 
-from fastapi_observability import tracing as t
+from fastapi_vitals import tracing as t
 
 
 @pytest.fixture(autouse=True)
@@ -20,7 +20,7 @@ def test_get_trace_context_ids_returns_dashes_without_active_span():
 
 def test_get_trace_context_ids_and_exemplar_labels_share_hex_format(memory_tracer):
     """Trace IDs and Prometheus exemplars must use the same OTEL hex convention."""
-    from fastapi_observability.metrics import _exemplars as metrics_tracing
+    from fastapi_vitals.metrics import _exemplars as metrics_tracing
 
     _exporter, provider = memory_tracer
     tracer = provider.get_tracer("test-join")
@@ -40,7 +40,7 @@ def test_format_trace_span_ids_invalid_and_valid():
     """Shared formatter: invalid → None; valid → 032x / 016x hex pair."""
     from opentelemetry.trace import INVALID_SPAN_CONTEXT, SpanContext, TraceFlags
 
-    from fastapi_observability._trace_ids import format_trace_span_ids
+    from fastapi_vitals._trace_ids import format_trace_span_ids
 
     assert format_trace_span_ids(INVALID_SPAN_CONTEXT) is None
 
@@ -91,8 +91,8 @@ def test_metrics_and_tracing_exclusions_share_one_source():
     """Single path list drives metrics frozenset and tracing regex."""
     import re
 
-    from fastapi_observability import metrics as m
-    from fastapi_observability.http_exclusions import EXCLUDED_HTTP_PATHS
+    from fastapi_vitals import metrics as m
+    from fastapi_vitals.http_exclusions import EXCLUDED_HTTP_PATHS
 
     assert m.EXCLUDED_PATHS == frozenset(EXCLUDED_HTTP_PATHS)
     pattern = re.compile(t.EXCLUDED_URLS)

@@ -1,6 +1,6 @@
 """Prometheus RED metrics, dependency/LLM observers, and HTTP middleware.
 
-Public import path is ``fastapi_observability.metrics``. Internal modules
+Public import path is ``fastapi_vitals.metrics``. Internal modules
 (``instruments``, ``middleware``, ``observe``) are an SRP split only —
 consumers should import from this package root.
 
@@ -10,7 +10,7 @@ To rename series, call ``configure_metric_names`` (or set
 
 from __future__ import annotations
 
-from fastapi_observability._identity import (
+from fastapi_vitals._identity import (
     DEFAULT_SERVICE_NAME,
     identity_labels,
 )

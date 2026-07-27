@@ -16,8 +16,8 @@ from prometheus_client.openmetrics.exposition import (
 )
 from starlette.responses import Response
 
-from fastapi_observability._identity import identity_labels
-from fastapi_observability._process_cache import ProcessCache
+from fastapi_vitals._identity import identity_labels
+from fastapi_vitals._process_cache import ProcessCache
 
 from ._exemplars import exemplar_labels
 from .instruments import (

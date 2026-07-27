@@ -146,7 +146,7 @@ def setup_tracing(
 
     Resource attributes always include service identity and
     ``process.runtime.*``. Optional platform adapters (e.g. AWS ECS under
-    ``fastapi_observability.adapters.ecs``) may add ``cloud.*`` attributes
+    ``fastapi_vitals.adapters.ecs``) may add ``cloud.*`` attributes
     and a preferred ``service.instance.id`` when their runtime is detected.
     This package never writes ``cloud.account.id``.
 
@@ -158,7 +158,7 @@ def setup_tracing(
     or env ``OTEL_INSTRUMENTATIONS=httpx,requests``. Supported names are in
     ``SUPPORTED_INSTRUMENTATIONS`` (``httpx``, ``requests``, ``sqlalchemy``,
     ``redis``). Each requires the matching optional extra (e.g.
-    ``fastapi-observability[httpx]``). Missing packages and individual
+    ``fastapi-vitals[httpx]``). Missing packages and individual
     instrumentor failures are skipped with a warning; tracing still enables.
 
     Optional ``exporter_factory`` / ``processor_factory`` replace the default

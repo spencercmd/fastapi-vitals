@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi_observability._process_cache import ProcessCache
+from fastapi_vitals._process_cache import ProcessCache
 
 
 def test_process_cache_loads_once_and_freezes():

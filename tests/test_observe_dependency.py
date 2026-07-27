@@ -7,7 +7,7 @@ import asyncio
 import pytest
 from opentelemetry.trace import StatusCode
 
-from fastapi_observability import metrics as m
+from fastapi_vitals import metrics as m
 from metrics_helpers import _finished_spans, _scrape
 
 

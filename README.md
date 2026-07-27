@@ -1,4 +1,9 @@
-# fastapi-observability
+# fastapi-vitals
+
+[![CI](https://github.com/spencercmd/fastapi-vitals/actions/workflows/ci.yml/badge.svg)](https://github.com/spencercmd/fastapi-vitals/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/fastapi-vitals.svg)](https://pypi.org/project/fastapi-vitals/)
+[![Python versions](https://img.shields.io/pypi/pyversions/fastapi-vitals.svg)](https://pypi.org/project/fastapi-vitals/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 OpenTelemetry tracing and Prometheus **RED** metrics for FastAPI services:
 rate, errors, duration, plus an in-flight **saturation** gauge
@@ -10,12 +15,14 @@ dual sync/async dependency/LLM observers.
 
 ## Install
 
+Requires Python 3.10+.
+
 ```bash
-pip install fastapi-observability
+pip install fastapi-vitals
 
 # Optional client auto-instrumentation extras:
-pip install "fastapi-observability[httpx]"
-pip install "fastapi-observability[otel-instrumentations]"  # httpx, requests, sqlalchemy, redis
+pip install "fastapi-vitals[httpx]"
+pip install "fastapi-vitals[otel-instrumentations]"  # httpx, requests, sqlalchemy, redis
 ```
 
 From a local checkout:
@@ -29,8 +36,8 @@ uv pip install --python .venv/bin/python -e ".[test,dev]"
 
 ```python
 from fastapi import FastAPI
-from fastapi_observability.metrics import setup_metrics, metrics_response
-from fastapi_observability.tracing import setup_tracing, shutdown_tracing
+from fastapi_vitals.metrics import setup_metrics, metrics_response
+from fastapi_vitals.tracing import setup_tracing, shutdown_tracing
 
 app = FastAPI()
 setup_tracing(app)   # no-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set
@@ -117,8 +124,8 @@ child spans in APM. Prefer instrumentors for `httpx` / `requests`; prefer
 ### Optional client instrumentations
 
 ```bash
-pip install "fastapi-observability[httpx]"
-pip install "fastapi-observability[otel-instrumentations]"
+pip install "fastapi-vitals[httpx]"
+pip install "fastapi-vitals[otel-instrumentations]"
 ```
 
 ```python
@@ -139,7 +146,7 @@ Missing optional extras are skipped with a warning; tracing still enables.
 ### Manual dependency timing
 
 ```python
-from fastapi_observability.metrics import observe_dependency
+from fastapi_vitals.metrics import observe_dependency
 
 with observe_dependency("openai", "chat"):
     ...  # dependency_request_duration_seconds + span "dependency openai"
@@ -159,7 +166,7 @@ finish reason, and token counters — **instead of** nesting `observe_dependency
 around the same call (that would double-count duration).
 
 ```python
-from fastapi_observability.metrics import observe_llm
+from fastapi_vitals.metrics import observe_llm
 
 with observe_llm("openai", "gpt-4o-mini", "chat") as obs:
     response = client.chat.completions.create(...)
@@ -192,14 +199,14 @@ with observe_llm("openai", model, "chat") as obs:
 Structured-log correlation:
 
 ```python
-from fastapi_observability.tracing import get_trace_context_ids
+from fastapi_vitals.tracing import get_trace_context_ids
 trace_id, span_id = get_trace_context_ids()   # ("-", "-") when no active span
 ```
 
 Custom metrics with the same service/env/version identity as RED series:
 
 ```python
-from fastapi_observability.metrics import identity_labels
+from fastapi_vitals.metrics import identity_labels
 
 # (service, env, version) from SERVICE / ENV / APP_VERSION
 MY_COUNTER.labels(*identity_labels(), "some_dim").inc()
@@ -214,16 +221,16 @@ Default series names are the standard RED-style names above. To namespace them
 export METRICS_NAME_PREFIX=myapp   # → myapp_http_requests_total, …
 ```
 
-Or in bootstrap code **before** `from fastapi_observability.metrics import …`:
+Or in bootstrap code **before** `from fastapi_vitals.metrics import …`:
 
 ```python
-from fastapi_observability.metrics.names import configure_metric_names
+from fastapi_vitals.metrics.names import configure_metric_names
 
 configure_metric_names(prefix="myapp")
 # or full overrides:
 # configure_metric_names(names={"http_requests": "svc_http_requests_total"})
 
-from fastapi_observability.metrics import setup_metrics, HTTP_REQUESTS
+from fastapi_vitals.metrics import setup_metrics, HTTP_REQUESTS
 ```
 
 Names lock on first instrument construction; mid-process renames are not supported.
@@ -279,7 +286,7 @@ Always set on the tracer resource:
 - `service.instance.id` when known (`HOSTNAME` → hostname)
 
 **ECS is optional.** When an ECS metadata URI env var is present, the
-`fastapi_observability.adapters.ecs` enricher also sets:
+`fastapi_vitals.adapters.ecs` enricher also sets:
 
 - `cloud.provider=aws`, `cloud.platform=aws_ecs`
 - `cloud.region` from `AWS_REGION` / `AWS_DEFAULT_REGION` or the task AZ
@@ -323,6 +330,17 @@ uv pip install --python .venv/bin/python -e ".[test,dev]"
 .venv/bin/python scripts/bench_route_template.py
 .venv/bin/pytest tests/test_bench_route_template.py --benchmark-only -q
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and the
+label-cardinality and fail-open rules that changes are reviewed against.
+Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+To report a vulnerability, follow [SECURITY.md](SECURITY.md) rather than
+opening a public issue.
+
+Release history lives in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi_observability.metrics.route_templates import RouteTemplateCache
+from fastapi_vitals.metrics.route_templates import RouteTemplateCache
 
 
 def test_route_template_cache_put_policy_and_clear():

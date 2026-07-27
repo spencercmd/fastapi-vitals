@@ -11,9 +11,9 @@ from urllib.error import URLError
 import pytest
 from fastapi import FastAPI
 
-from fastapi_observability import _resource as r
-from fastapi_observability import tracing as t
-from fastapi_observability.adapters import ecs
+from fastapi_vitals import _resource as r
+from fastapi_vitals import tracing as t
+from fastapi_vitals.adapters import ecs
 
 
 @pytest.fixture(autouse=True)

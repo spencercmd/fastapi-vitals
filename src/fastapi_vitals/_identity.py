@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from typing import Tuple
 
-from fastapi_observability._process_cache import ProcessCache
+from fastapi_vitals._process_cache import ProcessCache
 
 # Neutral defaults — not org- or product-specific. Prefer setting SERVICE.
 DEFAULT_SERVICE_NAME = "app"

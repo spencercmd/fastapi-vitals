@@ -18,7 +18,7 @@ from typing import Iterator
 
 from opentelemetry.trace import Span, Status, StatusCode
 
-from fastapi_observability._identity import identity_labels
+from fastapi_vitals._identity import identity_labels
 
 from ._dual_context import DualContext
 from ._exemplars import exemplar_labels, get_metrics_tracer
