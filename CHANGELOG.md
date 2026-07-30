@@ -12,6 +12,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Grafana RED overview dashboard JSON under `dashboards/`, plus a production
   screenshot in `docs/images/`, so adopters can import panels keyed to the
   public `http_*` / `dependency_*` series without reverse-engineering PromQL.
+- Multi-worker Prometheus support via `PROMETHEUS_MULTIPROC_DIR`:
+  `http_requests_in_flight` uses `multiprocess_mode="livesum"`,
+  `metrics_response()` scrapes through `MultiProcessCollector` when the env
+  key is present and the path is a directory (raw env string, matching
+  prometheus_client writers), and `mark_process_dead` is exported for
+  Gunicorn `worker_exit` bookkeeping (`mark_process_dead` no-ops when the
+  env key is absent, blank, or not a directory). Empty/invalid multiproc
+  dirs and collector errors fail soft to empty OpenMetrics (never fall
+  back to in-process `REGISTRY` while the env key is set). An empty
+  `PROMETHEUS_MULTIPROC_DIR=` assignment is not "off"; unset the variable
+  to disable. Exemplars remain single-process-only (upstream mmap
+  limitation).
+
+### Changed
+
+- `observe_dependency` now catches `BaseException` (including
+  `asyncio.CancelledError`) the same way as `observe_llm`: Prom
+  `status=error`, span ERROR + `record_exception`, then re-raise. Previously
+  cancellation left dependency histogram `status=ok` and skipped span ERROR.
+- `observe_dependency` disables OpenTelemetry SDK auto exception/status on its
+  child span so APM no longer gets a duplicate exception event alongside the
+  library's explicit `record_exception`.
+- `observe_dependency` and `observe_llm` treat `GeneratorExit` as abnormal
+  context-manager close (not a call outcome): re-raise without error
+  marking / `record_exception`, and without recording the duration
+  histogram. Exit telemetry is fail-open so a metrics or span-annotation
+  failure cannot suppress an in-flight exception or fail the call.
+- `observe_llm` child spans now follow OpenTelemetry GenAI inference
+  conventions: name `{operation} {model}`, kind `CLIENT`, attributes
+  `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.operation.name`
+  (passed at span creation for attribute-based samplers),
+  `gen_ai.response.finish_reasons`, and `error.type` on failures:
+  `rate_limited` when that Prom status was set, else the OpenTelemetry
+  exception type string (`module.QualName`, builtins unqualified) when
+  recorded, else the non-ok Prom status (replacing custom `provider` /
+  `model` / `operation` / `status` / `finish_reason` attrs and the
+  `llm {provider}` span name). Exception paths keep the status description
+  as `str(exc)`. `BaseException` (including `asyncio.CancelledError`) is
+  recorded and re-raised. Instance state (status, finish_reason, tokens,
+  exception) resets on each enter; call `set_status` / `set_result` inside
+  the block. Prometheus `llm_*` series and labels are unchanged. Anyone
+  querying the old custom span attrs or names must update their APM
+  queries.
 
 ## [0.1.0] - 2026-07-27
 

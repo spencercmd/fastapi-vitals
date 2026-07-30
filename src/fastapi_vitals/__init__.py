@@ -4,9 +4,9 @@ Public API:
     tracing:  setup_tracing, shutdown_tracing, get_trace_context_ids,
               set_request_id_on_span, EXCLUDED_URLS, SUPPORTED_INSTRUMENTATIONS
               (optional instrument= / OTEL_INSTRUMENTATIONS for client auto-instr)
-    metrics:  setup_metrics, metrics_response, observe_dependency,
-              observe_llm, metrics_enabled, identity_labels, HTTP_REQUESTS,
-              HTTP_REQUEST_DURATION, HTTP_REQUESTS_IN_FLIGHT,
+    metrics:  setup_metrics, metrics_response, mark_process_dead,
+              observe_dependency, observe_llm, metrics_enabled, identity_labels,
+              HTTP_REQUESTS, HTTP_REQUEST_DURATION, HTTP_REQUESTS_IN_FLIGHT,
               DEPENDENCY_REQUEST_DURATION, LLM_REQUEST_DURATION, LLM_TOKENS,
               RED_LABELS, IN_FLIGHT_LABELS, metrics_middleware
 

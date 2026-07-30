@@ -17,7 +17,9 @@ class DualContext(Generic[T]):
     delegate to the sync path (body work is sync timing + span annotation).
     """
 
-    _cm: Optional[AbstractContextManager[T]] = None
+    def __init__(self) -> None:
+        # Subclasses must call super().__init__() so _cm exists for safe __exit__ without enter.
+        self._cm: Optional[AbstractContextManager[T]] = None
 
     def _body(self) -> AbstractContextManager[T]:  # pragma: no cover
         raise NotImplementedError

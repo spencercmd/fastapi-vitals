@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import time
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Optional, Tuple
 
 from fastapi import FastAPI, Request
-from prometheus_client import REGISTRY
+from prometheus_client import REGISTRY, CollectorRegistry, multiprocess
 from prometheus_client.openmetrics.exposition import (
     CONTENT_TYPE_LATEST as OPENMETRICS_CONTENT_TYPE,
 )
@@ -29,7 +30,12 @@ from .instruments import (
 )
 from .route_templates import RouteTemplateCache, route_template
 
+logger = logging.getLogger(__name__)
+
 CallNext = Callable[[Request], Awaitable[Response]]
+
+# Empty OpenMetrics body for fail-soft multiproc misconfiguration.
+_EMPTY_OPENMETRICS = b"# EOF\n"
 
 
 def _load_metrics_enabled() -> bool:
@@ -98,10 +104,84 @@ def setup_metrics(app: FastAPI, *, cache_unmatched: bool = False) -> None:
     app.state.metrics_configured = True
 
 
+def _multiproc_dir() -> Optional[Tuple[str, str]]:
+    """Return ``(env_key, path)`` when a multiproc env key is present, else ``None``.
+
+    Presence matches prometheus_client (``in os.environ``), not truthiness of
+    the value: empty/whitespace still means multiproc mode is on and scrape
+    must not fall back to ``REGISTRY``. Uppercase preferred; deprecated
+    lowercase accepted. Returns the raw env string (may be ``""`` or
+    whitespace-only) so ``isdir`` / ``MultiProcessCollector`` see the same
+    path as prometheus_client writers — do not ``.strip()`` contentful values.
+    ``env_key`` is the name actually present (for warnings). Does not freeze —
+    scrape may re-read env; request middleware stays untouched.
+    """
+    if "PROMETHEUS_MULTIPROC_DIR" in os.environ:
+        return ("PROMETHEUS_MULTIPROC_DIR", os.environ["PROMETHEUS_MULTIPROC_DIR"])
+    if "prometheus_multiproc_dir" in os.environ:
+        return ("prometheus_multiproc_dir", os.environ["prometheus_multiproc_dir"])
+    return None
+
+
+def mark_process_dead(pid: Optional[int] = None) -> None:
+    """Remove live* gauge mmap files for a dead worker.
+
+    Call from Gunicorn ``worker_exit`` (or equivalent) so in-flight gauges do
+    not linger after a worker dies. Defaults to the current PID. Fail-open:
+    errors are logged and swallowed so an exit hook cannot break shutdown.
+    No-ops when the multiproc env key is absent, blank, or not a directory
+    (upstream would ``TypeError`` on unset or glob the CWD on ``\"\"``).
+    """
+    multiproc = _multiproc_dir()
+    if multiproc is None:
+        return
+    _, multiproc_path = multiproc
+    if not multiproc_path.strip() or not os.path.isdir(multiproc_path):
+        return
+    try:
+        multiprocess.mark_process_dead(
+            os.getpid() if pid is None else pid, path=multiproc_path
+        )
+    except Exception:
+        logger.warning("mark_process_dead failed; continuing", exc_info=True)
+
+
 def metrics_response() -> Response:
     if not metrics_enabled():
         return Response(status_code=404)
     # OpenMetrics is required for exemplars (classic Prometheus text drops them).
+    # Under multiproc, exemplars are a no-op in client_python mmap values; the
+    # scrape still uses OpenMetrics so single-process and multiproc share a
+    # Content-Type and framing.
+    multiproc = _multiproc_dir()
+    if multiproc is not None:
+        env_key, multiproc_path = multiproc
+        # Blank/whitespace → empty scrape; otherwise use the raw env string for
+        # isdir and MultiProcessCollector (writers read the same unstripped value).
+        if not multiproc_path.strip() or not os.path.isdir(multiproc_path):
+            logger.warning(
+                "%s=%r is not a directory; returning empty OpenMetrics scrape",
+                env_key,
+                multiproc_path,
+            )
+            return Response(
+                _EMPTY_OPENMETRICS, media_type=OPENMETRICS_CONTENT_TYPE
+            )
+        try:
+            registry = CollectorRegistry()
+            multiprocess.MultiProcessCollector(registry, path=multiproc_path)
+            return Response(
+                generate_latest_openmetrics(registry),
+                media_type=OPENMETRICS_CONTENT_TYPE,
+            )
+        except Exception:
+            logger.warning(
+                "multiproc metrics scrape failed; returning empty OpenMetrics",
+                exc_info=True,
+            )
+            return Response(
+                _EMPTY_OPENMETRICS, media_type=OPENMETRICS_CONTENT_TYPE
+            )
     return Response(
         generate_latest_openmetrics(REGISTRY), media_type=OPENMETRICS_CONTENT_TYPE
     )

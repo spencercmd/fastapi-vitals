@@ -27,6 +27,7 @@ from .instruments import (
     RED_LABELS,
 )
 from .middleware import (
+    mark_process_dead,
     metrics_enabled,
     metrics_middleware,
     metrics_response,
@@ -50,6 +51,7 @@ __all__ = [
     "metrics_middleware",
     "setup_metrics",
     "metrics_response",
+    "mark_process_dead",
     "observe_dependency",
     "observe_llm",
     "DEFAULT_SERVICE_NAME",

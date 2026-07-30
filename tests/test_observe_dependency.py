@@ -125,6 +125,72 @@ def test_aobserve_dependency_records_error_on_exception(memory_tracer):
     assert any(e.name == "exception" for e in spans[0].events)
 
 
+def test_aobserve_dependency_records_cancelled_error(memory_tracer):
+    """asyncio.CancelledError (BaseException) must mark Prom/span error."""
+    exporter, _provider = memory_tracer
+
+    async def _run():
+        async with m.observe_dependency("sql", "async_cancel"):
+            raise asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(_run())
+
+    body = _scrape()
+    assert any(
+        'operation="async_cancel"' in line
+        and 'status="error"' in line
+        and "dependency_request_duration_seconds_count" in line
+        for line in body.splitlines()
+    )
+    spans = _finished_spans(exporter)
+    assert len(spans) == 1
+    span = spans[0]
+    assert span.status.status_code == StatusCode.ERROR
+    events = [e for e in span.events if e.name == "exception"]
+    assert len(events) == 1
+    expected = "asyncio.exceptions.CancelledError"
+    assert events[0].attributes["exception.type"] == expected
+
+
+def test_observe_dependency_generator_exit_skips_error_and_histogram(
+    monkeypatch, memory_tracer
+):
+    """GeneratorExit closes the CM without Prom/span error or histogram."""
+    exporter, _provider = memory_tracer
+    monkeypatch.setenv("SERVICE", "test-svc")
+    cm = m.observe_dependency("sql", "dep_gen_exit")
+    cm.__enter__()
+    assert cm.__exit__(GeneratorExit, GeneratorExit(), None) is False
+
+    body = _scrape()
+    assert not any(
+        'operation="dep_gen_exit"' in line
+        and "dependency_request_duration_seconds_count" in line
+        for line in body.splitlines()
+    )
+    spans = _finished_spans(exporter)
+    assert len(spans) == 1
+    span = spans[0]
+    assert span.status.status_code == StatusCode.UNSET
+    assert not any(e.name == "exception" for e in span.events)
+
+
+def test_observe_dependency_telemetry_failure_does_not_suppress_exception(
+    monkeypatch, memory_tracer
+):
+    """Fail-open: metrics failure must not replace/suppress the call exception."""
+    monkeypatch.setenv("SERVICE", "test-svc")
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("prom down")
+
+    monkeypatch.setattr(m.DEPENDENCY_REQUEST_DURATION, "labels", _boom)
+    with pytest.raises(ValueError, match="dep boom"):
+        with m.observe_dependency("sql", "dep_fail_open"):
+            raise ValueError("dep boom")
+
+
 def test_observe_dependency_records_without_active_span(monkeypatch):
     """Histogram path works when exemplar labels are None (no active span)."""
     monkeypatch.setenv("SERVICE", "test-svc")
@@ -151,7 +217,11 @@ def test_dependency_and_llm_both_mark_span_error_and_exception_event(memory_trac
             raise RuntimeError("llm fail")
 
     dep = _finished_spans(exporter)
-    llm = _finished_spans(exporter, name_prefix="llm ")
+    llm = [
+        s
+        for s in exporter.get_finished_spans()
+        if s.name == "parity_llm_err gpt-4o"
+    ]
     assert len(dep) == 1 and len(llm) == 1
     for span in (dep[0], llm[0]):
         assert span.status.status_code == StatusCode.ERROR
@@ -172,7 +242,7 @@ def test_dependency_and_llm_both_attach_exemplars(monkeypatch, memory_tracer):
         s for s in exporter.get_finished_spans() if s.name == "dependency sql"
     ]
     llm_spans = [
-        s for s in exporter.get_finished_spans() if s.name == "llm openai"
+        s for s in exporter.get_finished_spans() if s.name == "parity_llm_ex gpt-4o"
     ]
     assert len(dep_spans) == 1 and len(llm_spans) == 1
     dep_trace = f"{dep_spans[0].context.trace_id:032x}"

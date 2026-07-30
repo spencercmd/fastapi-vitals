@@ -12,11 +12,12 @@ small ``_timed_span_body`` helper over a mega-template.
 
 from __future__ import annotations
 
+import logging
 import time
 from contextlib import contextmanager
-from typing import Iterator
+from typing import Iterator, Optional
 
-from opentelemetry.trace import Span, Status, StatusCode
+from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from fastapi_vitals._identity import identity_labels
 
@@ -30,13 +31,35 @@ from .instruments import (
     LLM_TOKENS,
 )
 
+logger = logging.getLogger(__name__)
+
+
+def _exception_type_name(exc: BaseException) -> str:
+    """OTEL ``exception.type`` / ``error.type`` string for ``exc``.
+
+    Matches ``Span.record_exception``: ``module.QualName``, except builtins
+    which are unqualified ``QualName``.
+    """
+    module = type(exc).__module__
+    qualname = type(exc).__qualname__
+    if module and module != "builtins":
+        return f"{module}.{qualname}"
+    return qualname
+
 
 def _record_span_exception(span: Span, exc: BaseException) -> None:
-    """Mark span ERROR + record_exception when the span is recording."""
+    """Mark span ERROR + record_exception when the span is recording.
+
+    Fail-open: span API failures are logged and swallowed so they cannot
+    replace the caller's exception.
+    """
     if not span.is_recording():
         return
-    span.record_exception(exc)
-    span.set_status(Status(StatusCode.ERROR, str(exc)))
+    try:
+        span.record_exception(exc)
+        span.set_status(Status(StatusCode.ERROR, str(exc)))
+    except Exception:
+        logger.debug("span exception recording failed; continuing", exc_info=True)
 
 
 class observe_dependency(DualContext["observe_dependency"]):
@@ -55,6 +78,8 @@ class observe_dependency(DualContext["observe_dependency"]):
     aligned with the histogram labels (not ``rpc.*`` — those names are too
     narrow for LLM/SQL/HTTP deps). Exceptions set span status ERROR and
     ``record_exception``; histogram ``status`` is ``ok`` or ``error``.
+    ``BaseException`` subclasses (including ``asyncio.CancelledError``) are
+    recorded the same way and re-raised. Exit telemetry is fail-open.
 
     **Ownership:** this helper owns explicit dependency **metrics** (primary)
     and an OTEL child span (secondary enrichment). Client auto-instrumentation
@@ -66,9 +91,12 @@ class observe_dependency(DualContext["observe_dependency"]):
 
     Histogram ``status`` remains ``ok`` / ``error`` today; richer values
     (timeout, http_429, …) can be added later without changing the signature.
+    ``GeneratorExit`` is re-raised without marking an error or recording the
+    histogram (abnormal CM close is not a dependency outcome).
     """
 
     def __init__(self, dependency: str, operation: str) -> None:
+        super().__init__()
         self.dependency = dependency
         self.operation = operation
 
@@ -76,8 +104,13 @@ class observe_dependency(DualContext["observe_dependency"]):
     def _body(self) -> Iterator["observe_dependency"]:
         started_at = time.perf_counter()
         status = "ok"
+        emit_metrics = True
+        # Disable SDK auto exception/status — _record_span_exception owns both
+        # (avoids a duplicate exception event).
         with get_metrics_tracer().start_as_current_span(
-            f"dependency {self.dependency}"
+            f"dependency {self.dependency}",
+            record_exception=False,
+            set_status_on_exception=False,
         ) as span:
             if span.is_recording():
                 span.set_attribute("peer.service", self.dependency)
@@ -87,22 +120,34 @@ class observe_dependency(DualContext["observe_dependency"]):
                 span.set_attribute("operation", self.operation)
             try:
                 yield self
-            except Exception as exc:
+            except GeneratorExit:
+                # Abnormal CM/generator close — not a dependency failure.
+                emit_metrics = False
+                raise
+            except BaseException as exc:
                 status = "error"
                 _record_span_exception(span, exc)
                 raise
             finally:
-                # Still inside the child span — exemplar can read it directly.
-                duration = time.perf_counter() - started_at
-                labels = (
-                    *identity_labels(),
-                    self.dependency,
-                    self.operation,
-                    status,
-                )
-                DEPENDENCY_REQUEST_DURATION.labels(*labels).observe(
-                    duration, exemplar=exemplar_labels()
-                )
+                # Do not return from finally — that would discard GeneratorExit.
+                if emit_metrics:
+                    try:
+                        # Still inside the child span — exemplar can read it.
+                        duration = time.perf_counter() - started_at
+                        labels = (
+                            *identity_labels(),
+                            self.dependency,
+                            self.operation,
+                            status,
+                        )
+                        DEPENDENCY_REQUEST_DURATION.labels(*labels).observe(
+                            duration, exemplar=exemplar_labels()
+                        )
+                    except Exception:
+                        logger.debug(
+                            "observe_dependency exit telemetry failed; continuing",
+                            exc_info=True,
+                        )
 
 
 class observe_llm(DualContext["observe_llm"]):
@@ -137,12 +182,28 @@ class observe_llm(DualContext["observe_llm"]):
     * ``llm_tokens_total`` — ``token_type`` is ``input`` or ``output`` (values
       on the counter, not as high-cardinality label values)
 
-    Span name ``llm {provider}``; attributes are Prom-aligned
-    (``provider`` / ``model`` / ``operation`` / ``status`` / ``finish_reason``)
-    plus ``peer.service`` and optional ``gen_ai.usage.*_tokens``.
+    Child span follows OpenTelemetry GenAI inference conventions (Development
+    stability): name ``{operation} {model}``, kind CLIENT, attributes
+    ``gen_ai.provider.name``, ``gen_ai.request.model``,
+    ``gen_ai.operation.name`` (set at span creation for attribute-based
+    samplers), ``gen_ai.response.finish_reasons``, optional
+    ``gen_ai.usage.*_tokens``, plus ``peer.service``. ``error.type`` is
+    ``rate_limited`` when that Prom status was set, else the OpenTelemetry
+    exception type string (``module.QualName``, builtins unqualified —
+    same as ``exception.type`` on the event) when one was recorded, else
+    the non-ok Prom status. Exception paths keep the status description
+    from ``record_exception`` (``str(exc)``). ``BaseException`` subclasses
+    (including ``asyncio.CancelledError``) are recorded the same way and
+    re-raised; ``GeneratorExit`` is re-raised without marking an LLM error
+    or recording the histogram (abnormal CM close is not an LLM outcome).
+    Each ``with`` / ``async with`` enter resets status, finish_reason, tokens,
+    and exception state — call ``set_status`` / ``set_result`` inside the block.
+    Exit telemetry is fail-open: a metrics/span annotation failure is logged
+    and does not suppress an in-flight exception or fail the call.
     """
 
     def __init__(self, provider: str, model: str, operation: str) -> None:
+        super().__init__()
         self.provider = provider
         self.model = model
         self.operation = operation
@@ -150,6 +211,7 @@ class observe_llm(DualContext["observe_llm"]):
         self._finish_reason = "unknown"
         self._input_tokens = 0
         self._output_tokens = 0
+        self._exception_type: Optional[str] = None
 
     def set_result(
         self,
@@ -178,26 +240,25 @@ class observe_llm(DualContext["observe_llm"]):
         else:
             self._status = "error"
 
-    def _annotate_enter(self, span: Span) -> None:
-        if not span.is_recording():
-            return
-        # Prom-aligned names only (+ peer.service for dependency-style filters).
-        span.set_attribute("peer.service", self.provider)
-        span.set_attribute("provider", self.provider)
-        span.set_attribute("model", self.model)
-        span.set_attribute("operation", self.operation)
-
     def _annotate_exit(self, span: Span) -> None:
         if not span.is_recording():
             return
-        span.set_attribute("status", self._status)
-        span.set_attribute("finish_reason", self._finish_reason)
+        span.set_attribute(
+            "gen_ai.response.finish_reasons", (self._finish_reason,)
+        )
         if self._input_tokens:
             span.set_attribute("gen_ai.usage.input_tokens", self._input_tokens)
         if self._output_tokens:
             span.set_attribute("gen_ai.usage.output_tokens", self._output_tokens)
-        # Non-ok Prom status and span status stay aligned even without an exception.
-        if self._status != "ok":
+        # Prefer Prom rate_limited for alerting parity; else exception class;
+        # else non-ok Prom status. Never overwrite exception status description.
+        if self._status == "rate_limited":
+            span.set_attribute("error.type", "rate_limited")
+        elif self._exception_type is not None:
+            span.set_attribute("error.type", self._exception_type)
+        elif self._status != "ok":
+            span.set_attribute("error.type", self._status)
+        if self._exception_type is None and self._status != "ok":
             span.set_status(Status(StatusCode.ERROR, self._status))
 
     def _record_metrics(self, duration: float) -> None:
@@ -224,19 +285,51 @@ class observe_llm(DualContext["observe_llm"]):
 
     @contextmanager
     def _body(self) -> Iterator["observe_llm"]:
+        # Reset so a reused instance cannot leak status/tokens/error.type.
+        self._status = "ok"
+        self._finish_reason = "unknown"
+        self._input_tokens = 0
+        self._output_tokens = 0
+        self._exception_type = None
         started_at = time.perf_counter()
+        emit_metrics = True
+        # Identity attrs at creation so attribute-based samplers can see them.
+        # Disable SDK auto exception/status — _record_span_exception owns both
+        # (keeps description as str(exc); avoids a duplicate exception event).
         with get_metrics_tracer().start_as_current_span(
-            f"llm {self.provider}"
+            f"{self.operation} {self.model}",
+            kind=SpanKind.CLIENT,
+            attributes={
+                "gen_ai.operation.name": self.operation,
+                "gen_ai.provider.name": self.provider,
+                "gen_ai.request.model": self.model,
+                "peer.service": self.provider,
+            },
+            record_exception=False,
+            set_status_on_exception=False,
         ) as span:
-            self._annotate_enter(span)
             try:
                 yield self
-            except Exception as exc:
+            except GeneratorExit:
+                # Abnormal CM/generator close, not an LLM failure — do not set
+                # Prom error status, error.type, record_exception, or histogram.
+                emit_metrics = False
+                raise
+            except BaseException as exc:
                 if self._status == "ok":
                     self._status = "error"
+                self._exception_type = _exception_type_name(exc)
                 _record_span_exception(span, exc)
                 raise
             finally:
-                self._annotate_exit(span)
-                # Still inside the child span — exemplar can read it directly.
-                self._record_metrics(time.perf_counter() - started_at)
+                # Do not return from finally — that would discard GeneratorExit.
+                if emit_metrics:
+                    try:
+                        self._annotate_exit(span)
+                        # Still inside the child span — exemplar can read it.
+                        self._record_metrics(time.perf_counter() - started_at)
+                    except Exception:
+                        logger.debug(
+                            "observe_llm exit telemetry failed; continuing",
+                            exc_info=True,
+                        )

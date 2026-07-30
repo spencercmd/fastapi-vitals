@@ -6,4 +6,6 @@ when you need platform-specific resource enrichment.
 
 from __future__ import annotations
 
+from . import ecs
+
 __all__ = ["ecs"]

@@ -466,6 +466,7 @@ def test_public_metrics_api_reexports():
         LLM_TOKENS,
         RED_LABELS,
         identity_labels,
+        mark_process_dead,
         metrics_enabled,
         metrics_middleware,
         metrics_response,
@@ -477,6 +478,7 @@ def test_public_metrics_api_reexports():
     assert callable(identity_labels)
     assert callable(setup_metrics)
     assert callable(metrics_response)
+    assert callable(mark_process_dead)
     assert callable(metrics_enabled)
     assert callable(metrics_middleware)
     assert observe_dependency is m.observe_dependency

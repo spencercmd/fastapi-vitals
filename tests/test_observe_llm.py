@@ -7,14 +7,19 @@ from typing import Optional
 
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from opentelemetry.trace import StatusCode
+from opentelemetry.trace import SpanKind, StatusCode
 
 from fastapi_vitals import metrics as m
-from metrics_helpers import _finished_spans, _scrape
+from metrics_helpers import _scrape
 
 
 def _finished_llm_spans(exporter: InMemorySpanExporter):
-    return _finished_spans(exporter, name_prefix="llm ")
+    """LLM child spans are named ``{operation} {model}`` (GenAI), not ``llm …``."""
+    return [
+        s
+        for s in exporter.get_finished_spans()
+        if (s.attributes or {}).get("gen_ai.provider.name") is not None
+    ]
 
 
 def _llm_token_value(*, provider, model, operation, token_type) -> Optional[float]:
@@ -94,6 +99,8 @@ def test_observe_llm_set_status_error_without_raise_marks_span_error(
     spans = _finished_llm_spans(exporter)
     assert len(spans) == 1
     assert spans[0].status.status_code == StatusCode.ERROR
+    assert spans[0].status.description == "error"
+    assert spans[0].attributes["error.type"] == "error"
 
 
 def test_observe_llm_omitted_set_result_uses_unknown_finish_reason(
@@ -142,6 +149,14 @@ def test_observe_llm_zero_tokens_do_not_increment_counter(monkeypatch, memory_tr
     )
 
 
+def _exception_events(span):
+    return [e for e in span.events if e.name == "exception"]
+
+
+class _CustomLlmError(Exception):
+    """Non-builtin exception for error.type / exception.type alignment."""
+
+
 def test_observe_llm_error_status_on_exception(monkeypatch, memory_tracer):
     exporter, _provider = memory_tracer
     monkeypatch.setenv("SERVICE", "test-svc")
@@ -161,9 +176,36 @@ def test_observe_llm_error_status_on_exception(monkeypatch, memory_tracer):
     spans = _finished_llm_spans(exporter)
     assert len(spans) == 1
     span = spans[0]
-    assert span.name == "llm openai"
+    assert span.name == "chat_error_exc gpt-4o"
+    assert span.kind == SpanKind.CLIENT
     assert span.status.status_code == StatusCode.ERROR
-    assert any(e.name == "exception" for e in span.events)
+    assert span.status.description == "boom"
+    assert span.attributes["error.type"] == "RuntimeError"
+    # record_exception=False on start_as_current_span — we emit exactly one.
+    events = _exception_events(span)
+    assert len(events) == 1
+    assert events[0].attributes["exception.type"] == "RuntimeError"
+    assert span.attributes["error.type"] == events[0].attributes["exception.type"]
+
+
+def test_observe_llm_error_type_matches_exception_type_for_non_builtin(
+    monkeypatch, memory_tracer
+):
+    exporter, _provider = memory_tracer
+    monkeypatch.setenv("SERVICE", "test-svc")
+    with pytest.raises(_CustomLlmError, match="custom"):
+        with m.observe_llm("openai", "gpt-4o", "chat_custom_exc"):
+            raise _CustomLlmError("custom")
+
+    spans = _finished_llm_spans(exporter)
+    assert len(spans) == 1
+    span = spans[0]
+    events = _exception_events(span)
+    assert len(events) == 1
+    expected = f"{__name__}.{_CustomLlmError.__qualname__}"
+    assert events[0].attributes["exception.type"] == expected
+    assert span.attributes["error.type"] == expected
+    assert span.attributes["error.type"] == events[0].attributes["exception.type"]
 
 
 def test_observe_llm_rate_limited_status_preserved_on_raise(monkeypatch, memory_tracer):
@@ -184,8 +226,103 @@ def test_observe_llm_rate_limited_status_preserved_on_raise(monkeypatch, memory_
 
     spans = _finished_llm_spans(exporter)
     assert len(spans) == 1
-    assert spans[0].status.status_code == StatusCode.ERROR
-    assert spans[0].attributes["status"] == "rate_limited"
+    span = spans[0]
+    assert span.status.status_code == StatusCode.ERROR
+    # Prom rate_limited wins for error.type; exception message kept on status.
+    assert span.attributes["error.type"] == "rate_limited"
+    assert span.status.description == "429"
+    assert "status" not in (span.attributes or {})
+    assert len(_exception_events(span)) == 1
+
+
+def test_observe_llm_rate_limited_without_raise_marks_span_error(
+    monkeypatch, memory_tracer
+):
+    exporter, _provider = memory_tracer
+    monkeypatch.setenv("SERVICE", "test-svc")
+    with m.observe_llm("openai", "gpt-4o", "rate_limited_no_raise") as obs:
+        obs.set_status("rate_limited")
+        obs.set_result(finish_reason="stop")
+
+    body = _scrape()
+    assert any(
+        'operation="rate_limited_no_raise"' in line
+        and 'status="rate_limited"' in line
+        and "llm_request_duration_seconds_count" in line
+        for line in body.splitlines()
+    )
+    spans = _finished_llm_spans(exporter)
+    assert len(spans) == 1
+    span = spans[0]
+    assert span.status.status_code == StatusCode.ERROR
+    assert span.status.description == "rate_limited"
+    assert span.attributes["error.type"] == "rate_limited"
+    assert _exception_events(span) == []
+
+
+def test_observe_llm_reuse_clears_stale_error_state(monkeypatch, memory_tracer):
+    """Re-entering the same instance must not leak prior error.type / status."""
+    exporter, _provider = memory_tracer
+    monkeypatch.setenv("SERVICE", "test-svc")
+    obs = m.observe_llm("openai", "gpt-4o", "reuse_obs")
+
+    with pytest.raises(RuntimeError, match="first"):
+        with obs:
+            raise RuntimeError("first")
+
+    with obs as second:
+        second.set_result(input_tokens=1, output_tokens=1, finish_reason="stop")
+
+    body = _scrape()
+    assert any(
+        'operation="reuse_obs"' in line
+        and 'status="ok"' in line
+        and 'finish_reason="stop"' in line
+        and "llm_request_duration_seconds_count" in line
+        for line in body.splitlines()
+    )
+    spans = _finished_llm_spans(exporter)
+    assert len(spans) == 2
+    ok_span = spans[1]
+    assert ok_span.status.status_code == StatusCode.UNSET
+    assert "error.type" not in (ok_span.attributes or {})
+    assert ok_span.attributes["gen_ai.usage.input_tokens"] == 1
+
+
+def test_observe_llm_pre_enter_state_cleared_on_enter(monkeypatch, memory_tracer):
+    """set_status / set_result before ``with`` must not survive enter reset."""
+    monkeypatch.setenv("SERVICE", "test-svc")
+    obs = m.observe_llm("openai", "gpt-4o", "pre_enter_reset")
+    obs.set_status("rate_limited")
+    obs.set_result(input_tokens=99, output_tokens=99, finish_reason="stop")
+
+    with obs as entered:
+        entered.set_result(input_tokens=1, output_tokens=2, finish_reason="length")
+
+    body = _scrape()
+    assert any(
+        'operation="pre_enter_reset"' in line
+        and 'status="ok"' in line
+        and 'finish_reason="length"' in line
+        and "llm_request_duration_seconds_count" in line
+        for line in body.splitlines()
+    )
+    assert _llm_token_value(
+        provider="openai",
+        model="gpt-4o",
+        operation="pre_enter_reset",
+        token_type="input",
+    ) == 1.0
+    assert _llm_token_value(
+        provider="openai",
+        model="gpt-4o",
+        operation="pre_enter_reset",
+        token_type="output",
+    ) == 2.0
+    assert not any(
+        'operation="pre_enter_reset"' in line and 'status="rate_limited"' in line
+        for line in body.splitlines()
+    )
 
 
 def test_observe_llm_unknown_status_coerces_to_error(monkeypatch, memory_tracer):
@@ -203,7 +340,7 @@ def test_observe_llm_unknown_status_coerces_to_error(monkeypatch, memory_tracer)
 
 
 def test_observe_llm_emits_child_span_with_attributes(memory_tracer):
-    """Span uses Prom-aligned attrs + token usage only (no llm.* / gen_ai name triples)."""
+    """Span uses GenAI inference attrs (no custom Prom-mirror / llm.* keys)."""
     exporter, provider = memory_tracer
     tracer = provider.get_tracer("test")
     with tracer.start_as_current_span("http_request") as parent:
@@ -219,23 +356,26 @@ def test_observe_llm_emits_child_span_with_attributes(memory_tracer):
     assert len(spans) == 1
     span = spans[0]
     attrs = dict(span.attributes or {})
-    assert span.name == "llm openai"
+    assert span.name == "chat gpt-4o-mini"
+    assert span.kind == SpanKind.CLIENT
     assert attrs["peer.service"] == "openai"
-    assert attrs["provider"] == "openai"
-    assert attrs["model"] == "gpt-4o-mini"
-    assert attrs["operation"] == "chat"
-    assert attrs["status"] == "ok"
-    assert attrs["finish_reason"] == "stop"
+    assert attrs["gen_ai.provider.name"] == "openai"
+    assert attrs["gen_ai.request.model"] == "gpt-4o-mini"
+    assert attrs["gen_ai.operation.name"] == "chat"
+    assert attrs["gen_ai.response.finish_reasons"] == ("stop",)
     assert attrs["gen_ai.usage.input_tokens"] == 12
     assert attrs["gen_ai.usage.output_tokens"] == 8
-    # Single naming scheme — no triple mirrors.
+    # Custom / deprecated naming schemes must not appear.
+    assert "provider" not in attrs
+    assert "model" not in attrs
+    assert "operation" not in attrs
+    assert "status" not in attrs
+    assert "finish_reason" not in attrs
     assert "llm.provider" not in attrs
     assert "llm.model" not in attrs
     assert "llm.operation" not in attrs
     assert "gen_ai.system" not in attrs
-    assert "gen_ai.request.model" not in attrs
-    assert "gen_ai.operation.name" not in attrs
-    assert "gen_ai.response.finish_reasons" not in attrs
+    assert "error.type" not in attrs
     assert span.status.status_code == StatusCode.UNSET
     assert span.parent is not None
     assert span.parent.span_id == parent_ctx.span_id
@@ -283,8 +423,9 @@ def test_aobserve_llm_records_metric_and_span(memory_tracer):
 
     spans = _finished_llm_spans(exporter)
     assert len(spans) == 1
-    assert spans[0].name == "llm openai"
-    assert spans[0].attributes["operation"] == "async_chat"
+    assert spans[0].name == "async_chat gpt-4o"
+    assert spans[0].kind == SpanKind.CLIENT
+    assert spans[0].attributes["gen_ai.operation.name"] == "async_chat"
 
 
 def test_aobserve_llm_records_error_on_exception(memory_tracer):
@@ -303,5 +444,143 @@ def test_aobserve_llm_records_error_on_exception(memory_tracer):
 
     spans = _finished_llm_spans(exporter)
     assert len(spans) == 1
-    assert spans[0].status.status_code == StatusCode.ERROR
-    assert any(e.name == "exception" for e in spans[0].events)
+    span = spans[0]
+    assert span.status.status_code == StatusCode.ERROR
+    assert span.status.description == "llm down"
+    assert span.attributes["error.type"] == "ValueError"
+    assert len(_exception_events(span)) == 1
+
+
+def test_aobserve_llm_rate_limited_status_preserved_on_raise(memory_tracer):
+    exporter, _provider = memory_tracer
+
+    async def _run():
+        async with m.observe_llm("openai", "gpt-4o", "async_rate_limited") as obs:
+            obs.set_status("rate_limited")
+            raise RuntimeError("429")
+
+    with pytest.raises(RuntimeError, match="429"):
+        asyncio.run(_run())
+
+    body = _scrape()
+    assert any(
+        'operation="async_rate_limited"' in line
+        and 'status="rate_limited"' in line
+        and "llm_request_duration_seconds_count" in line
+        for line in body.splitlines()
+    )
+    spans = _finished_llm_spans(exporter)
+    assert len(spans) == 1
+    span = spans[0]
+    assert span.status.status_code == StatusCode.ERROR
+    assert span.attributes["error.type"] == "rate_limited"
+    assert span.status.description == "429"
+    assert len(_exception_events(span)) == 1
+
+
+def test_aobserve_llm_records_cancelled_error(memory_tracer):
+    """asyncio.CancelledError (BaseException) must mark Prom/span error."""
+    exporter, _provider = memory_tracer
+
+    async def _run():
+        async with m.observe_llm("openai", "gpt-4o", "async_cancel"):
+            raise asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(_run())
+
+    body = _scrape()
+    assert any(
+        'operation="async_cancel"' in line
+        and 'status="error"' in line
+        and "llm_request_duration_seconds_count" in line
+        for line in body.splitlines()
+    )
+    spans = _finished_llm_spans(exporter)
+    assert len(spans) == 1
+    span = spans[0]
+    assert span.status.status_code == StatusCode.ERROR
+    events = _exception_events(span)
+    assert len(events) == 1
+    expected = "asyncio.exceptions.CancelledError"
+    assert events[0].attributes["exception.type"] == expected
+    assert span.attributes["error.type"] == expected
+
+
+def test_aobserve_llm_rate_limited_preserved_on_cancelled_error(memory_tracer):
+    """rate_limited + CancelledError: Prom status kept; span keeps str(exc)."""
+    exporter, _provider = memory_tracer
+
+    async def _run():
+        async with m.observe_llm("openai", "gpt-4o", "async_rl_cancel") as obs:
+            obs.set_status("rate_limited")
+            raise asyncio.CancelledError("cancelled after 429")
+
+    with pytest.raises(asyncio.CancelledError, match="cancelled after 429"):
+        asyncio.run(_run())
+
+    body = _scrape()
+    assert any(
+        'operation="async_rl_cancel"' in line
+        and 'status="rate_limited"' in line
+        and "llm_request_duration_seconds_count" in line
+        for line in body.splitlines()
+    )
+    spans = _finished_llm_spans(exporter)
+    assert len(spans) == 1
+    span = spans[0]
+    assert span.status.status_code == StatusCode.ERROR
+    assert span.attributes["error.type"] == "rate_limited"
+    assert span.status.description == "cancelled after 429"
+    assert len(_exception_events(span)) == 1
+
+
+def test_observe_llm_generator_exit_not_recorded_as_error(monkeypatch, memory_tracer):
+    """GeneratorExit closes the CM without Prom/span LLM error or histogram."""
+    exporter, _provider = memory_tracer
+    monkeypatch.setenv("SERVICE", "test-svc")
+    cm = m.observe_llm("openai", "gpt-4o", "gen_exit")
+    cm.__enter__()
+    assert cm.__exit__(GeneratorExit, GeneratorExit(), None) is False
+
+    body = _scrape()
+    assert not any(
+        'operation="gen_exit"' in line
+        and "llm_request_duration_seconds_count" in line
+        for line in body.splitlines()
+    )
+    spans = _finished_llm_spans(exporter)
+    assert len(spans) == 1
+    span = spans[0]
+    assert span.status.status_code == StatusCode.UNSET
+    assert "error.type" not in (span.attributes or {})
+    assert _exception_events(span) == []
+
+
+def test_observe_llm_telemetry_failure_does_not_suppress_exception(
+    monkeypatch, memory_tracer
+):
+    """Fail-open: metrics failure must not replace/suppress the call exception."""
+    monkeypatch.setenv("SERVICE", "test-svc")
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("prom down")
+
+    monkeypatch.setattr(m.LLM_REQUEST_DURATION, "labels", _boom)
+    with pytest.raises(ValueError, match="llm boom"):
+        with m.observe_llm("openai", "gpt-4o", "fail_open_exc"):
+            raise ValueError("llm boom")
+
+
+def test_observe_llm_telemetry_failure_on_success_is_swallowed(
+    monkeypatch, memory_tracer
+):
+    """Fail-open: metrics failure must not fail a successful LLM call."""
+    monkeypatch.setenv("SERVICE", "test-svc")
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("prom down")
+
+    monkeypatch.setattr(m.LLM_REQUEST_DURATION, "labels", _boom)
+    with m.observe_llm("openai", "gpt-4o", "fail_open_ok") as obs:
+        obs.set_result(finish_reason="stop")

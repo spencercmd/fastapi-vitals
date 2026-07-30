@@ -56,14 +56,14 @@ HTTP_REQUEST_DURATION = Histogram(
     RED_LABELS,
     buckets=DURATION_BUCKETS,
 )
-# Single-process Gauge (correct for single-worker deployments). When using
-# multi-worker Gunicorn/Uvicorn with PROMETHEUS_MULTIPROC_DIR, you need
-# multiprocess_mode="livesum" and MultiProcessCollector in metrics_response
-# (not implemented here — env must be set before importing metrics).
+# livesum aggregates across workers under PROMETHEUS_MULTIPROC_DIR without a
+# pid label (the default "all" mode would inject one and break series shape).
+# Harmless when multiproc is off. Env must be set before importing metrics.
 HTTP_REQUESTS_IN_FLIGHT = Gauge(
     _resolve_name("http_requests_in_flight"),
     "HTTP requests currently being processed.",
     IN_FLIGHT_LABELS,
+    multiprocess_mode="livesum",
 )
 DEPENDENCY_REQUEST_DURATION = Histogram(
     _resolve_name("dependency_request_duration"),

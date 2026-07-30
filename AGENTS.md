@@ -98,7 +98,12 @@ leaks and never returns to zero.
 
 **Keep the scrape in OpenMetrics.** `metrics_response` uses
 `generate_latest_openmetrics` because classic Prometheus exposition silently
-drops exemplars. Do not "simplify" it to `generate_latest`.
+drops exemplars. Do not "simplify" it to `generate_latest`. Under
+`PROMETHEUS_MULTIPROC_DIR`, scrape via a fresh `CollectorRegistry` +
+`MultiProcessCollector` only — never fall back to `REGISTRY` when the env is
+set. Keep `HTTP_REQUESTS_IN_FLIGHT` on `multiprocess_mode="livesum"` (not
+`"all"`, which injects a `pid` label). The env must be present before importing
+metrics (mmap `ValueClass` freezes at first construction).
 
 **Duck typing in `route_templates.py` is deliberate.** The route table is
 heterogeneous — FastAPI included routers, Starlette `Mount`s, and custom route
@@ -150,12 +155,3 @@ code; do not add comments that restate what the next line does.
   can review the cardinality decision.
 - Do not bump `__version__` or tag releases unless asked. Version lives only in
   `src/fastapi_vitals/__init__.py`; `pyproject.toml` reads it from there.
-
-## Known open items
-
-- Multi-worker deployments with `PROMETHEUS_MULTIPROC_DIR` are not wired up;
-  the gauge would need `multiprocess_mode="livesum"` and a
-  `MultiProcessCollector` in `metrics_response`. The README documents this as
-  unsupported. Do not half-implement it.
-- `adapters/__init__.py` lists `ecs` in `__all__` without importing it, which
-  pyright flags as a warning. Harmless at runtime; fix only if asked.
