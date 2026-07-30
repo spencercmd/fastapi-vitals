@@ -17,4 +17,4 @@ use ``observe_llm`` instead of nesting dependency for model calls.
 ``metrics_response`` is OpenMetrics so histogram exemplars are retained.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
