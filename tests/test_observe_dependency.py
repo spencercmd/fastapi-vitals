@@ -80,7 +80,9 @@ def test_observe_dependency_records_error_status_on_exception(monkeypatch, memor
     assert len(spans) == 1
     span = spans[0]
     assert span.status.status_code == StatusCode.ERROR
-    assert any(e.name == "exception" for e in span.events)
+    # record_exception=False on the span CM — exactly one exception event.
+    events = [e for e in span.events if e.name == "exception"]
+    assert len(events) == 1
 
 
 def test_aobserve_dependency_records_metric_and_span(memory_tracer):
@@ -122,7 +124,8 @@ def test_aobserve_dependency_records_error_on_exception(memory_tracer):
     spans = _finished_spans(exporter)
     assert len(spans) == 1
     assert spans[0].status.status_code == StatusCode.ERROR
-    assert any(e.name == "exception" for e in spans[0].events)
+    events = [e for e in spans[0].events if e.name == "exception"]
+    assert len(events) == 1
 
 
 def test_aobserve_dependency_records_cancelled_error(memory_tracer):
@@ -189,6 +192,20 @@ def test_observe_dependency_telemetry_failure_does_not_suppress_exception(
     with pytest.raises(ValueError, match="dep boom"):
         with m.observe_dependency("sql", "dep_fail_open"):
             raise ValueError("dep boom")
+
+
+def test_observe_dependency_telemetry_failure_on_success_is_swallowed(
+    monkeypatch, memory_tracer
+):
+    """Fail-open: metrics failure must not fail a successful dependency call."""
+    monkeypatch.setenv("SERVICE", "test-svc")
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("prom down")
+
+    monkeypatch.setattr(m.DEPENDENCY_REQUEST_DURATION, "labels", _boom)
+    with m.observe_dependency("sql", "dep_fail_open_ok"):
+        pass
 
 
 def test_observe_dependency_records_without_active_span(monkeypatch):
@@ -265,6 +282,8 @@ def test_observe_exit_without_enter_is_safe():
     """Dual-CM shell must not assert if __exit__/__aexit__ run without enter."""
     dep = m.observe_dependency("sql", "no_enter")
     assert dep.__exit__(None, None, None) is False
+    assert asyncio.run(dep.__aexit__(None, None, None)) is False
 
     llm = m.observe_llm("openai", "gpt-4o", "no_enter")
     assert llm.__exit__(None, None, None) is False
+    assert asyncio.run(llm.__aexit__(None, None, None)) is False

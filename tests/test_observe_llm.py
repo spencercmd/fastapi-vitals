@@ -584,3 +584,51 @@ def test_observe_llm_telemetry_failure_on_success_is_swallowed(
     monkeypatch.setattr(m.LLM_REQUEST_DURATION, "labels", _boom)
     with m.observe_llm("openai", "gpt-4o", "fail_open_ok") as obs:
         obs.set_result(finish_reason="stop")
+
+
+def test_observe_llm_record_exception_failure_still_sets_span_status(
+    monkeypatch, memory_tracer
+):
+    """Fail-open: record_exception failure must not skip set_status or caller exc."""
+    from opentelemetry.sdk.trace import Span as SdkSpan
+
+    exporter, _provider = memory_tracer
+    monkeypatch.setenv("SERVICE", "test-svc")
+
+    def _boom(self, *_args, **_kwargs):
+        raise RuntimeError("record_exception down")
+
+    monkeypatch.setattr(SdkSpan, "record_exception", _boom)
+    with pytest.raises(ValueError, match="still raised"):
+        with m.observe_llm("openai", "gpt-4o", "record_exc_fail"):
+            raise ValueError("still raised")
+
+    spans = _finished_llm_spans(exporter)
+    assert len(spans) == 1
+    span = spans[0]
+    assert span.status.status_code == StatusCode.ERROR
+    assert span.status.description == "still raised"
+    assert span.attributes["error.type"] == "ValueError"
+    assert _exception_events(span) == []
+
+
+def test_observe_llm_annotate_failure_still_records_metrics(
+    monkeypatch, memory_tracer
+):
+    """Fail-open: span annotation failure must not skip the histogram."""
+    monkeypatch.setenv("SERVICE", "test-svc")
+
+    def _boom(self, _span):
+        raise RuntimeError("annotate down")
+
+    monkeypatch.setattr(m.observe_llm, "_annotate_exit", _boom)
+    with m.observe_llm("openai", "gpt-4o", "annotate_fail_ok") as obs:
+        obs.set_result(finish_reason="stop")
+
+    body = _scrape()
+    assert any(
+        'operation="annotate_fail_ok"' in line
+        and 'status="ok"' in line
+        and "llm_request_duration_seconds_count" in line
+        for line in body.splitlines()
+    )

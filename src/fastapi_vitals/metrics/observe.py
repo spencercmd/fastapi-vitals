@@ -47,19 +47,26 @@ def _exception_type_name(exc: BaseException) -> str:
     return qualname
 
 
-def _record_span_exception(span: Span, exc: BaseException) -> None:
+def _record_span_exception(span: Span, exc: BaseException) -> bool:
     """Mark span ERROR + record_exception when the span is recording.
 
-    Fail-open: span API failures are logged and swallowed so they cannot
-    replace the caller's exception.
+    Fail-open: each span API call is isolated so a ``record_exception``
+    failure cannot skip ``set_status``, and neither can replace the
+    caller's exception. Returns whether ``set_status`` succeeded (so
+    callers can avoid overwriting ``str(exc)`` or retry a fallback).
     """
     if not span.is_recording():
-        return
+        return False
     try:
         span.record_exception(exc)
-        span.set_status(Status(StatusCode.ERROR, str(exc)))
     except Exception:
-        logger.debug("span exception recording failed; continuing", exc_info=True)
+        logger.debug("span.record_exception failed; continuing", exc_info=True)
+    try:
+        span.set_status(Status(StatusCode.ERROR, str(exc)))
+        return True
+    except Exception:
+        logger.debug("span.set_status failed; continuing", exc_info=True)
+        return False
 
 
 class observe_dependency(DualContext["observe_dependency"]):
@@ -212,6 +219,7 @@ class observe_llm(DualContext["observe_llm"]):
         self._input_tokens = 0
         self._output_tokens = 0
         self._exception_type: Optional[str] = None
+        self._span_error_status_set = False
 
     def set_result(
         self,
@@ -251,15 +259,22 @@ class observe_llm(DualContext["observe_llm"]):
         if self._output_tokens:
             span.set_attribute("gen_ai.usage.output_tokens", self._output_tokens)
         # Prefer Prom rate_limited for alerting parity; else exception class;
-        # else non-ok Prom status. Never overwrite exception status description.
+        # else non-ok Prom status. Never overwrite exception status description
+        # (str(exc) from _record_span_exception).
         if self._status == "rate_limited":
             span.set_attribute("error.type", "rate_limited")
         elif self._exception_type is not None:
             span.set_attribute("error.type", self._exception_type)
         elif self._status != "ok":
             span.set_attribute("error.type", self._status)
-        if self._exception_type is None and self._status != "ok":
-            span.set_status(Status(StatusCode.ERROR, self._status))
+        if (
+            not self._span_error_status_set
+            and (self._exception_type is not None or self._status != "ok")
+        ):
+            description = (
+                self._status if self._status != "ok" else self._exception_type or "error"
+            )
+            span.set_status(Status(StatusCode.ERROR, description))
 
     def _record_metrics(self, duration: float) -> None:
         identity = identity_labels()
@@ -291,6 +306,7 @@ class observe_llm(DualContext["observe_llm"]):
         self._input_tokens = 0
         self._output_tokens = 0
         self._exception_type = None
+        self._span_error_status_set = False
         started_at = time.perf_counter()
         emit_metrics = True
         # Identity attrs at creation so attribute-based samplers can see them.
@@ -319,17 +335,25 @@ class observe_llm(DualContext["observe_llm"]):
                 if self._status == "ok":
                     self._status = "error"
                 self._exception_type = _exception_type_name(exc)
-                _record_span_exception(span, exc)
+                self._span_error_status_set = _record_span_exception(span, exc)
                 raise
             finally:
                 # Do not return from finally — that would discard GeneratorExit.
+                # Annotate and metrics are isolated so one failure cannot skip
+                # the other.
                 if emit_metrics:
                     try:
                         self._annotate_exit(span)
+                    except Exception:
+                        logger.debug(
+                            "observe_llm span exit annotation failed; continuing",
+                            exc_info=True,
+                        )
+                    try:
                         # Still inside the child span — exemplar can read it.
                         self._record_metrics(time.perf_counter() - started_at)
                     except Exception:
                         logger.debug(
-                            "observe_llm exit telemetry failed; continuing",
+                            "observe_llm metrics exit failed; continuing",
                             exc_info=True,
                         )
