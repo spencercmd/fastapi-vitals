@@ -13,6 +13,12 @@ Designed for production request paths: low-cardinality **route templates**,
 **OpenMetrics** scrapes with histogram **exemplars**, fail-open middleware, and
 dual sync/async dependency/LLM observers.
 
+Extracted from production FastAPI services run by the maintainer. Import the
+[Grafana RED overview](dashboards/fastapi-vitals-overview.json) or start from
+the live shape below:
+
+![fastapi-vitals RED overview in Grafana](docs/images/red-overview.png)
+
 ## Install
 
 Requires Python 3.10+.
@@ -345,3 +351,6 @@ Release history lives in [CHANGELOG.md](CHANGELOG.md).
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
+
+Maintained by [Spencer Livingston](https://github.com/spencercmd)
+(`spencer@spencercmd.com`).

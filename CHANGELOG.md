@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Grafana RED overview dashboard JSON under `dashboards/`, plus a production
+  screenshot in `docs/images/`, so adopters can import panels keyed to the
+  public `http_*` / `dependency_*` series without reverse-engineering PromQL.
+
 ## [0.1.0] - 2026-07-27
 
 Initial public release.
