@@ -516,7 +516,10 @@ def test_aobserve_llm_rate_limited_preserved_on_cancelled_error(memory_tracer):
             obs.set_status("rate_limited")
             raise asyncio.CancelledError("cancelled after 429")
 
-    with pytest.raises(asyncio.CancelledError, match="cancelled after 429"):
+    # Do not match str(exc) here: on 3.10 asyncio.run() replaces an escaping
+    # CancelledError with a fresh empty one (message survives in __context__).
+    # Span description below asserts the library saw the original str(exc).
+    with pytest.raises(asyncio.CancelledError):
         asyncio.run(_run())
 
     body = _scrape()
